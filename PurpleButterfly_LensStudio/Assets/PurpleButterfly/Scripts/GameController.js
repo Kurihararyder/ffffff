@@ -8,6 +8,8 @@
 //@input Component.Image templateImage {"label":"Template Image (任一個 Screen Image)"}
 //@input bool followFace = true {"label":"變身圖片跟著臉移動（找不到臉就放畫面中間）"}
 //@input Asset.Font fontOverride {"label":"字型（選填，不填就用內建的 Noto Sans TC）"}
+//@input Asset.Texture[] textures {"label":"圖片（選填：圖片變成粉紅格子時，把 Art 資料夾裡全部圖片拖進來）"}
+//@input bool showDebug = true {"label":"顯示除錯資訊（畫面最下方）"}
 
 var DATA = require("./QuizData.js");
 var Logic = require("./GameLogic.js");
@@ -49,14 +51,43 @@ var baseMaterial = tplImage.mainMaterial;
 var renderLayer = tplObject.layer;
 var font = script.fontOverride || loadAsset(FONT_PATH);
 
-var root = global.scene.createSceneObject("PurpleButterfly UI");
-if (tplObject.getParent()) root.setParent(tplObject.getParent());
-root.layer = renderLayer;
-root.createComponent("Component.ScreenTransform").anchors = Rect.create(-1, 1, -1, 1);
+// UI 要掛在「相機」底下才會是全螢幕；如果直接掛在範本圖片的父物件，父物件的大小會讓整個介面縮小
+function findCameraAncestor(obj) {
+  var p = obj.getParent();
+  while (p) {
+    if (p.getComponent("Component.Camera")) return p;
+    p = p.getParent();
+  }
+  return null;
+}
+var uiParent = findCameraAncestor(tplObject) || tplObject.getParent();
+var chain = [];
+for (var cp = tplObject.getParent(); cp; cp = cp.getParent()) chain.push(cp.name);
+print(LOG + "範本圖片的父物件鏈：" + (chain.join(" < ") || "（無）") + "；UI 掛在：" + (uiParent ? uiParent.name : "（根）"));
 
+var root = global.scene.createSceneObject("PurpleButterfly UI");
+if (uiParent) root.setParent(uiParent);
+root.layer = renderLayer;
+var rootTransform = root.createComponent("Component.ScreenTransform");
+rootTransform.anchors = Rect.create(-1, 1, -1, 1);
+try { rootTransform.offsets = Rect.create(0, 0, 0, 0); } catch (e) {}
+
+// 圖片來源：1) Inspector 的 Textures 欄位（依檔名比對） 2) requireAsset
+var givenTextures = {};
+if (script.textures) {
+  for (var ti = 0; ti < script.textures.length; ti++) {
+    var gt = script.textures[ti];
+    if (gt && gt.name) givenTextures[String(gt.name).replace(/\.(png|jpe?g)$/i, "")] = gt;
+  }
+}
 var textures = {};
+var missingTextures = [];
 function getTexture(name) {
-  if (textures[name] === undefined) textures[name] = loadAsset(ART_DIR + name);
+  if (textures[name] === undefined) {
+    var tex = givenTextures[name.replace(/\.(png|jpe?g)$/i, "")] || loadAsset(ART_DIR + name);
+    textures[name] = tex || null;
+    if (!tex) missingTextures.push(name);
+  }
   return textures[name];
 }
 
@@ -187,6 +218,20 @@ var badges = {
 var nextButton = makeImage("NextButton", R.next, "ui_btn_next.png", false);
 var nextLabel = makeText("NextLabel", inset(R.next, 0.06, 0.1), 52, "center", WHITE);
 
+var statusText = makeText("Status", [0.03, 0.952, 0.97, 0.997], 30, "left", new vec4(1, 0.95, 0.4, 1), true);
+var lastTouchInfo = "";
+
+function updateStatus() {
+  var lines = [];
+  if (missingTextures.length > 0) {
+    lines.push("找不到 " + missingTextures.length + " 張圖片：請選取 Art 資料夾內全部圖片，拖到 GameController 的 Textures 欄位");
+  }
+  if (!font) lines.push("字型未載入");
+  if (script.showDebug && lastTouchInfo) lines.push(lastTouchInfo);
+  statusText.text.text = lines.join("\n");
+  show(statusText, lines.length > 0);
+}
+
 // ───────────── 臉部追蹤（找不到就用固定位置）─────────────
 var perspCam = null;
 var headObj = null;
@@ -316,15 +361,14 @@ function render() {
   show(nextButton, hasNext);
   show(nextLabel, hasNext);
   if (hasNext) nextLabel.text.text = v.nextLabel;
+  updateStatus();
 }
 
 // ───────────── 觸控 ─────────────
 function hit(el, p) {
   if (!el.obj.enabled) return false;
   try {
-    if (typeof el.transform.containsScreenPoint === "function") {
-      return el.transform.containsScreenPoint(p);
-    }
+    if (el.transform.containsScreenPoint(p)) return true;
   } catch (e) {}
   var r = el.rect;
   return p.x >= r[0] && p.x <= r[2] && p.y >= r[1] && p.y <= r[3];
@@ -333,13 +377,18 @@ function hit(el, p) {
 script.createEvent("TouchStartEvent").bind(function (eventData) {
   if (!currentView) return;
   var p = eventData.getTouchPosition();
+  var action = "沒點到按鈕";
+  var acted = false;
   if (currentView.showAnswers) {
-    if (hit(plateO, p)) { if (game.choose(0)) render(); return; }
-    if (hit(plateX, p)) { if (game.choose(1)) render(); return; }
+    if (hit(plateO, p)) { acted = game.choose(0); action = "選 O"; }
+    else if (hit(plateX, p)) { acted = game.choose(1); action = "選 X"; }
   }
-  if (currentView.nextLabel !== null && hit(nextButton, p)) {
-    if (game.next()) render();
+  if (!acted && currentView.nextLabel !== null && hit(nextButton, p)) {
+    acted = game.next();
+    action = "下一步";
   }
+  lastTouchInfo = "點擊 (" + p.x.toFixed(2) + ", " + p.y.toFixed(2) + ") → " + action;
+  if (acted) render(); else updateStatus();
 });
 
 // 範本圖片只是用來借材質，隱藏起來

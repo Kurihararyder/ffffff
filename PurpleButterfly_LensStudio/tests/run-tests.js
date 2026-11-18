@@ -156,8 +156,12 @@ function makeLensEnv(opts) {
   const sceneObj = (n) => { const o = makeObj(n); roots.push(o); return o; };
 
   const orthoCam = sceneObj("Orthographic Camera");
+  orthoCam.comps["Component.Camera"] = { type: "Orthographic" };
+  // 範本圖片放在一個「很小的容器」底下：UI 不能掛在這裡，否則整個介面會被縮小
+  const container = makeObj("Small Container");
+  container.setParent(orthoCam);
   const tplObj = makeObj("Template");
-  tplObj.setParent(orthoCam);
+  tplObj.setParent(container);
   const tplImg = tplObj.createComponent("Component.Image");
   tplImg.addMaterial(makeMat());
 
@@ -177,6 +181,7 @@ function makeLensEnv(opts) {
   const sandbox = {
     script: {
       templateImage: tplImg, followFace: opts.followFace !== false, fontOverride: null, api: {},
+      textures: opts.textures || [], showDebug: opts.showDebug !== false,
       createEvent: (n) => ({ bind: (f) => (events[n] = f) })
     },
     global: { scene: {
@@ -191,6 +196,7 @@ function makeLensEnv(opts) {
     HorizontalOverflow: { Wrap: "Wrap" }, VerticalOverflow: { Shrink: "Shrink" },
     VerticalAlignment: { Center: "C" }, HorizontalAlignment: { Left: "L", Right: "R", Center: "C" },
     requireAsset: (p) => {
+      if (opts.failAssets) throw new Error("requireAsset 不可用");
       const full = path.join(ASSET_ROOT, "Scripts", p);
       if (!fs.existsSync(full)) throw new Error("not found " + p);
       return { asset: p };
@@ -201,7 +207,7 @@ function makeLensEnv(opts) {
   const src = fs.readFileSync(file, "utf8");
   const fn = new Function(...Object.keys(sandbox), "require", src);
   fn(...Object.values(sandbox), (p) => require(path.join(path.dirname(file), p)));
-  return { sandbox, created, events, tplObj, orthoCam, perspCam };
+  return { sandbox, created, events, tplObj, orthoCam, perspCam, container };
 }
 
 const byName = (env, name) => env.created.find((o) => o.name === name);
@@ -214,11 +220,12 @@ function center(env, name) {
 }
 function tapOn(env, name) { const c = center(env, name); tap(env, c.x, c.y); }
 
-test("介面：建立完成、範本圖片被隱藏、UI 掛在範本的父物件下", () => {
+test("介面：建立完成、範本圖片被隱藏、UI 直接掛在相機底下（不掛在範本的小容器）", () => {
   const env = makeLensEnv();
   assert.strictEqual(env.tplObj.enabled, false);
   const root = byName(env, "PurpleButterfly UI");
   assert.strictEqual(root.parent, env.orthoCam);
+  assert.notStrictEqual(root.parent, env.container);
   root.children.forEach((c) => assert.strictEqual(c.layer, 7, c.name + " layer"));
   // 開場：沒有背景圖遮住相機（沒有全螢幕不透明圖片）
   assert.strictEqual(byName(env, "Card").enabled, true);
@@ -319,6 +326,48 @@ test("臉部追蹤：找不到透視相機或無法建立 Head 時不會當機�
     assert.strictEqual(byName(env, "Overlay_Butterfly").enabled, true);
     assert(logs.some((l) => l.includes("變身圖片會放在畫面中間")), JSON.stringify(logs));
   });
+});
+
+test("圖片：requireAsset 不可用時，改用 Textures 欄位（依檔名比對），不顯示錯誤", () => {
+  const names = fs.readdirSync(path.join(ASSET_ROOT, "Art"));
+  const given = names.map((n) => ({ name: n.replace(/\.(png|jpe?g)$/i, "") })); // LS 的 asset.name 不含副檔名
+  const env = makeLensEnv({ failAssets: true, textures: given });
+  const mat = (n) => byName(env, n).comps["Component.Image"].mats[0].mainPass.baseTex;
+  assert.strictEqual(mat("Banner1"), given.find((g) => g.name === "q1_banner"));
+  assert.strictEqual(mat("AnswerX"), given.find((g) => g.name === "ans_x"));
+  assert.strictEqual(byName(env, "Status").enabled, true); // 字型也失敗 → 有字型提示
+  assert(!T(env, "Status").includes("張圖片"), T(env, "Status"));
+});
+
+test("圖片：兩種方式都失敗時，畫面最下方顯示明確的處理方法", () => {
+  const env = makeLensEnv({ failAssets: true });
+  assert.strictEqual(byName(env, "Status").enabled, true);
+  assert(/找不到 \d+ 張圖片/.test(T(env, "Status")), T(env, "Status"));
+  assert(T(env, "Status").includes("Textures"));
+});
+
+test("診斷：點擊後畫面最下方顯示點擊位置與結果；關閉除錯就不顯示", () => {
+  let env = makeLensEnv();
+  tap(env, 0.5, 0.9);
+  assert(T(env, "Status").includes("下一步"), T(env, "Status"));
+  tap(env, 0.5, 0.45);
+  assert(T(env, "Status").includes("沒點到按鈕"), T(env, "Status"));
+  env = makeLensEnv({ showDebug: false });
+  tap(env, 0.5, 0.45);
+  assert.strictEqual(byName(env, "Status").enabled, false);
+});
+
+test("點擊：即使實際位置與預期不同（螢幕變換偏移），點預期位置或畫面上的按鈕都有效", () => {
+  const env = makeLensEnv();
+  // 模擬按鈕實際畫在別處：containsScreenPoint 只在 (0.5, 0.2) 附近回傳 true
+  const st = byName(env, "NextButton").comps["Component.ScreenTransform"];
+  st.containsScreenPoint = (p) => Math.abs(p.x - 0.5) < 0.1 && Math.abs(p.y - 0.2) < 0.05;
+  tap(env, 0.5, 0.2); // 實際畫的位置
+  assert.strictEqual(T(env, "Progress"), "第 1 / 3 題");
+  const env2 = makeLensEnv();
+  byName(env2, "NextButton").comps["Component.ScreenTransform"].containsScreenPoint = () => false;
+  tap(env2, 0.5, 0.9); // 預期的全螢幕位置
+  assert.strictEqual(T(env2, "Progress"), "第 1 / 3 題");
 });
 
 test("沒有接 Template Image 時只印提示，不會當機", () => {

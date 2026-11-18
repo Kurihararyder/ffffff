@@ -25,6 +25,10 @@
 
 Template Image 只是用來借它的材質，腳本會把它隱藏。
 
+**圖片如果變成粉紅色格子**（Lens Studio 的「找不到貼圖」），而且畫面最下方出現黃色的「找不到 N 張圖片」：
+在 Asset Browser 打開 `Art` 資料夾，全選裡面所有圖片，一次拖到 GameController 的 **Textures** 欄位上即可（腳本會依檔名自動對應）。
+畫面最下方的黃字是除錯資訊（會顯示字型、圖片是否載入，以及每次點擊的位置與結果），弄好後可在 Inspector 取消勾選「顯示除錯資訊」。
+
 ## 變身圖片會跟著臉
 腳本會嘗試用臉部追蹤把「紫斑蝶 / 牛糞」放在臉的位置並依臉的大小縮放。
 如果找不到臉或無法建立臉部追蹤，就會放在畫面中間（Console 會有提示）。不想用可以在 Inspector 取消勾選「變身圖片跟著臉移動」。
@@ -56,10 +60,12 @@ Template Image 只是用來借它的材質，腳本會把它隱藏。
 |---|---|
 | Console 顯示「找不到資源」 | 確認有拖整個資料夾進去，且資料夾名稱沒改 |
 | 中文變成方框 | 把 `Fonts/NotoSansTC-Medium-subset.ttf` 拖到 GameController 的「字型」欄位 |
+| 圖片是粉紅色格子 | 把 `Art` 裡全部圖片拖到 GameController 的 Textures 欄位（見上方） |
+| 整個介面縮在畫面中間 | 腳本會把 UI 掛在 Orthographic Camera 底下；請確認 Screen Image 是在 Orthographic Camera 之下，並打開 Logger 看「UI 掛在」那一行 |
+| 點了沒反應 | 看畫面最下方的黃字：有「點擊 (x, y) → …」代表有收到觸控；沒有代表觸控根本沒進來，請把 Logger 內容和黃字截圖給我 |
 | 沒有相機畫面 | 確認場景裡有預設的 Camera Object（新專案都有），且沒有其他全螢幕圖片擋住 |
 | 變身圖片沒跟著臉 | 取消「變身圖片跟著臉移動」，圖片會固定放在畫面中間 |
 | 文字沒有自動換行或縮小 | 到 `PurpleButterfly UI` 底下的 Text，把 Overflow 設成 Wrap / Shrink |
-| 點了沒反應 | 確認 Preview 是手機直式，Template Image 在 Orthographic Camera 底下 |
 
 ## 內容要查證
 - 三題的對錯與解說是依你提供的題目圖整理：第 1、3 題為 O，第 2 題為 X（紫斑蝶冬天會成群往南遷移到溫暖避風的山谷越冬）。解說文字請導覽人員或生態專家確認。
