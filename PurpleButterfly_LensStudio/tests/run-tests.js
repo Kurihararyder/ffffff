@@ -2,8 +2,8 @@
 const assert = require("assert");
 const path = require("path");
 const Module = require("module");
-const DATA = require("../Assets/Scripts/QuizData");
-const { createGame } = require("../Assets/Scripts/GameLogic");
+const DATA = require("../Assets/PurpleButterfly/Scripts/QuizData");
+const { createGame } = require("../Assets/PurpleButterfly/Scripts/GameLogic");
 
 let passed = 0;
 function test(name, fn) {
@@ -186,53 +186,182 @@ test("畫面文字長度合理（單一字串 <= 120 字）", () => {
 });
 
 // ── 模擬 Lens Studio 環境，載入 GameController ──
-test("GameController 在模擬的 Lens Studio 環境中可載入、渲染、處理按鈕", () => {
-  const makeText = () => ({ text: "", enabled: true, textFill: { color: null } });
-  const makeBtn = () => {
-    const handlers = [];
-    const obj = { enabled: true };
-    return { onTap: { add: (f) => handlers.push(f) }, getSceneObject: () => obj, fire: () => handlers.forEach((f) => f()), obj };
-  };
-  const startHandlers = [];
-  const choiceObjects = [{ enabled: true }, { enabled: true }, { enabled: true }];
-  const bar = {
-    enabled: true,
-    _st: { anchors: { left: -1, right: 1 } },
-    getComponent: function () { return this._st; }
-  };
-  const script = {
-    headerText: makeText(), titleText: makeText(), bodyText: makeText(), feedbackText: makeText(),
-    progressText: makeText(), energyText: makeText(), energyBarFill: bar,
-    choiceObjects, choiceLabels: [makeText(), makeText(), makeText()],
-    choiceButtons: [makeBtn(), makeBtn(), makeBtn()], nextButton: makeBtn(), nextLabel: makeText(),
-    includeBonusLevel: true, shuffleChoices: false,
-    goodColor: "G", badColor: "B", api: {},
-    createEvent: () => ({ bind: (f) => startHandlers.push(f) })
-  };
-  const file = path.join(__dirname, "../Assets/Scripts/GameController.js");
-  const src = require("fs").readFileSync(file, "utf8");
-  const m = new Module(file);
-  m.filename = file;
-  m.paths = Module._nodeModulePaths(path.dirname(file));
-  const fn = new Function("script", "require", "module", src);
-  fn(script, (p) => require(path.join(path.dirname(file), p)), m);
-  startHandlers.forEach((f) => f());
+const fs = require("fs");
+const ASSET_ROOT = path.join(__dirname, "../Assets/PurpleButterfly");
 
-  assert.strictEqual(script.titleText.text, "紫蝶奇遇記");
-  assert.strictEqual(script.nextLabel.text, "開始");
-  assert.strictEqual(choiceObjects[0].enabled, false);
-  script.nextButton.fire(); // → 前測 T1
-  assert.strictEqual(script.progressText.text, "第 1 / 3 題");
-  assert.strictEqual(choiceObjects.every((o) => o.enabled), true);
-  assert(script.choiceLabels[0].text.startsWith("A.  "));
-  assert.strictEqual(script.nextButton.obj.enabled, false);
-  script.choiceButtons[0].fire(); script.choiceButtons[0].fire(); script.choiceButtons[0].fire();
-  script.nextButton.fire(); // 第 1 關 intro → 第 1 題
-  script.choiceButtons[0].fire(); // 盤龍木（未洗牌，第 1 項）
-  assert.strictEqual(script.energyText.text, "能量 65  (+5)");
-  assert.strictEqual(script.feedbackText.textFill.color, "G");
-  assert.strictEqual(bar._st.anchors.right, -1 + 2 * 0.65);
-  assert.strictEqual(typeof script.api.getStats().energy, "number");
+function makeLensEnv(opts) {
+  opts = opts || {};
+  const created = [];
+  const events = {};
+  function makeObj(name) {
+    const obj = {
+      name, enabled: true, layer: 7, parent: null, children: [], comps: {},
+      setParent(p) { obj.parent = p; p.children.push(obj); },
+      getParent() { return obj.parent; },
+      createComponent(type) {
+        let c;
+        if (type === "Component.ScreenTransform") {
+          c = { anchors: null, containsScreenPoint(p) {
+            const a = c.anchors; const x = p.x * 2 - 1, y = 1 - p.y * 2;
+            return x >= a.left && x <= a.right && y >= a.bottom && y <= a.top; } };
+        } else if (type === "Component.Image") {
+          c = { mats: [], stretchMode: null, getSceneObject() { return obj; }, addMaterial(m) { c.mats.push(m); }, get mainMaterial() { return c.mats[0]; } };
+        } else if (type === "Component.Text") {
+          c = { text: "", size: 0, font: null, textFill: { color: null },
+            outlineSettings: { enabled: false, size: 0, fill: { color: null } } };
+        } else throw new Error("unknown " + type);
+        obj.comps[type] = c;
+        return c;
+      },
+      getComponent(type) { return obj.comps[type]; }
+    };
+    created.push(obj);
+    return obj;
+  }
+  const makeMat = () => ({ mainPass: { baseTex: null }, clone() { return makeMat(); } });
+  const tplObj = makeObj("Template");
+  const camera = makeObj("Orthographic Camera");
+  tplObj.setParent(camera);
+  const tplImg = tplObj.createComponent("Component.Image");
+  tplImg.addMaterial(makeMat());
+
+  const loaded = [];
+  const sandbox = {
+    script: {
+      templateImage: tplImg, includeBonusLevel: true, shuffleChoices: false, fontOverride: null, api: {},
+      createEvent: (n) => ({ bind: (f) => (events[n] = f) })
+    },
+    global: { scene: { createSceneObject: (n) => makeObj(n) } },
+    Rect: { create: (l, r, b, t) => ({ left: l, right: r, bottom: b, top: t }) },
+    vec4: function (x, y, z, w) { this.x = x; this.y = y; this.z = z; this.w = w; },
+    StretchMode: { Fit: "Fit", Stretch: "Stretch" },
+    HorizontalOverflow: { Wrap: "Wrap" }, VerticalOverflow: { Shrink: "Shrink" },
+    VerticalAlignment: { Center: "C" }, HorizontalAlignment: { Left: "L", Right: "R", Center: "C" },
+    requireAsset: (p) => {
+      const full = path.join(ASSET_ROOT, "Scripts", p);
+      if (!fs.existsSync(full)) throw new Error("not found " + p);
+      loaded.push(p);
+      return { asset: p };
+    },
+    print: () => {}
+  };
+  const file = path.join(ASSET_ROOT, "Scripts/GameController.js");
+  const src = fs.readFileSync(file, "utf8");
+  const fn = new Function(...Object.keys(sandbox), "require", src);
+  fn(...Object.values(sandbox), (p) => require(path.join(path.dirname(file), p)));
+  return { sandbox, created, events, tplObj, loaded, camera };
+}
+
+function byName(env, name) { return env.created.find((o) => o.name === name); }
+function tap(env, x, y) { env.events.TouchStartEvent({ getTouchPosition: () => ({ x, y }) }); }
+function center(obj) {
+  const a = obj.comps["Component.ScreenTransform"].anchors;
+  return { x: ((a.left + a.right) / 2 + 1) / 2, y: (1 - (a.bottom + a.top) / 2) / 2 };
+}
+
+test("素材：腳本用到的每張圖與字型都存在", () => {
+  const src = fs.readFileSync(path.join(ASSET_ROOT, "Scripts/GameController.js"), "utf8");
+  const names = new Set();
+  for (const m of src.matchAll(/"((?:bg|icon|ui|mascot)[a-z0-9_]*\.(?:png|jpg))"/g)) names.add(m[1]);
+  for (const m of src.matchAll(/(?:bg|icon)_[a-z0-9]+\.(?:png|jpg)/g)) names.add(m[0]);
+  assert(names.size >= 15, "找到的圖片數 " + names.size);
+  names.forEach((n) => assert(fs.existsSync(path.join(ASSET_ROOT, "Art", n)), "缺圖 " + n));
+  assert(fs.existsSync(path.join(ASSET_ROOT, "Fonts/NotoSansTC-Medium-subset.ttf")));
+});
+
+test("GameController：建立介面、隱藏範本、載入圖片與字型", () => {
+  const env = makeLensEnv();
+  assert.strictEqual(env.tplObj.enabled, false, "範本圖片應被隱藏");
+  const root = byName(env, "PurpleButterfly UI");
+  assert.strictEqual(root.parent, env.camera, "UI 應掛在範本的父物件下");
+  assert(root.children.length >= 30);
+  root.children.forEach((c) => assert.strictEqual(c.layer, 7, c.name + " layer"));
+  assert(env.loaded.includes("../Fonts/NotoSansTC-Medium-subset.ttf"));
+  assert(env.loaded.filter((p) => p.startsWith("../Art/")).length >= 21);
+  // 開場畫面：標題背景 + 英雄圖示，沒有選項，有「開始」按鈕
+  assert.strictEqual(byName(env, "bg_title").enabled, true);
+  assert.strictEqual(byName(env, "bg_l1").enabled, false);
+  assert.strictEqual(byName(env, "icon_hero").enabled, true);
+  assert.strictEqual(byName(env, "badge_good").enabled, false);
+  assert.strictEqual(byName(env, "ChoiceButton0").enabled, false);
+  assert.strictEqual(byName(env, "NextLabel").comps["Component.Text"].text, "開始");
+  assert.strictEqual(byName(env, "Title").comps["Component.Text"].text, "紫蝶奇遇記");
+  assert.strictEqual(byName(env, "EnergyText").enabled, false);
+});
+
+test("GameController：點擊流程（開始 → 前測 → 第1關 → 回饋 → 下一步）", () => {
+  const env = makeLensEnv();
+  const T = (n) => byName(env, n).comps["Component.Text"].text;
+  tap(env, 0.5, 0.9); // 開始
+  assert.strictEqual(T("Header"), "前測");
+  assert.strictEqual(byName(env, "bg_test").enabled, true);
+  assert.strictEqual(byName(env, "ChoiceButton2").enabled, true);
+  assert(T("ChoiceLabel0").startsWith("A.  "));
+  for (let i = 0; i < 3; i++) { const c = center(byName(env, "ChoiceButton0")); tap(env, c.x, c.y); }
+  assert.strictEqual(T("Title"), "第 1 關　生命的開始");
+  tap(env, 0.5, 0.9); // 出發
+  assert.strictEqual(byName(env, "bg_l1").enabled, true);
+  assert.strictEqual(byName(env, "icon_l1").enabled, true);
+  assert.strictEqual(byName(env, "EnergyText").enabled, true);
+  assert.strictEqual(T("EnergyText"), "能量 60");
+  // 點第一個選項（未洗牌 → 盤龍木，+5）
+  const c0 = center(byName(env, "ChoiceButton0")); tap(env, c0.x, c0.y);
+  assert.strictEqual(T("EnergyText"), "能量 65 (+5)");
+  assert.strictEqual(byName(env, "badge_good").enabled, true);
+  assert.strictEqual(byName(env, "Feedback").enabled, true);
+  assert.strictEqual(byName(env, "ChoiceButton0").enabled, false);
+  assert(T("Feedback").length > 10);
+  // 能量條：65% 的寬度
+  const track = byName(env, "EnergyTrack").comps["Component.ScreenTransform"].anchors;
+  const fill = byName(env, "EnergyFill").comps["Component.ScreenTransform"].anchors;
+  assert(Math.abs((fill.right - fill.left) / (track.right - track.left) - 0.65) < 1e-6);
+  tap(env, 0.5, 0.9); // 下一步
+  assert.strictEqual(byName(env, "Feedback").enabled, false);
+  assert.strictEqual(byName(env, "ChoiceButton0").enabled, true);
+});
+
+test("GameController：點在空白處不會有反應", () => {
+  const env = makeLensEnv();
+  tap(env, 0.5, 0.9); // 開始 → 前測
+  const before = byName(env, "Body").comps["Component.Text"].text;
+  tap(env, 0.5, 0.2); // 圖示區
+  assert.strictEqual(byName(env, "Body").comps["Component.Text"].text, before);
+});
+
+test("GameController：沒有接 Template Image 時不會當機", () => {
+  const file = path.join(ASSET_ROOT, "Scripts/GameController.js");
+  const src = fs.readFileSync(file, "utf8");
+  const msgs = [];
+  const fn = new Function("script", "print", "require", src);
+  fn({ templateImage: null, api: {} }, (m) => msgs.push(m), () => ({ createGame: () => ({}) }));
+  assert(msgs[0].includes("Template Image"));
+});
+
+test("全遊戲：用模擬環境把整局玩完（含全部 4 關與後測），每個畫面都有文字", () => {
+  const env = makeLensEnv();
+  const T = (n) => byName(env, n).comps["Component.Text"].text;
+  const g = (name) => byName(env, name);
+  let guard = 0;
+  const seen = new Set();
+  while (guard++ < 400) {
+    if (T("Title").includes("紫蝶生存") || T("Title") === "順利生存" || T("Title") === "驚險過關") break;
+    assert(T("Body").length > 0, "空白 Body");
+    seen.add(g("bg_title").enabled ? "title" : g("bg_test").enabled ? "test" : g("bg_result").enabled ? "result" :
+      g("bg_l1").enabled ? "l1" : g("bg_l2").enabled ? "l2" : g("bg_l3").enabled ? "l3" : "l4");
+    if (g("ChoiceButton0").enabled) {
+      // 找最佳選項（比對題庫文字）
+      const labels = [0, 1, 2].filter((i) => g("ChoiceButton" + i).enabled).map((i) => T("ChoiceLabel" + i).slice(4));
+      let idx = 0;
+      for (const l of DATA.levels) for (const s of l.steps) {
+        const best = s.choices.find((c) => c.good);
+        if (labels.includes(best.text)) idx = labels.indexOf(best.text);
+      }
+      for (const t of DATA.tests) { if (t.question === T("Body")) idx = labels.indexOf(t.options[t.answer]); }
+      const c = center(g("ChoiceButton" + idx)); tap(env, c.x, c.y);
+    } else tap(env, 0.5, 0.9);
+  }
+  ["title", "test", "l1", "l2", "l3", "l4"].forEach((k) => assert(seen.has(k), "沒看過畫面 " + k));
+  assert(T("Body").includes("後測 3 / 3"), T("Body"));
 });
 
 console.log("\n全部 " + passed + " 項測試通過");

@@ -244,6 +244,7 @@ function createGame(data, options) {
   function getView() {
     var v = {
       phase: state.phase,
+      levelId: 0,
       header: "",
       title: "",
       body: "",
@@ -289,6 +290,7 @@ function createGame(data, options) {
 
       case "levelIntro":
         level = currentLevel();
+        v.levelId = level.id;
         v.header = level.subtitle;
         v.title = level.name;
         v.body = level.intro;
@@ -297,6 +299,7 @@ function createGame(data, options) {
 
       case "question":
         level = currentLevel();
+        v.levelId = level.id;
         step = currentStep();
         v.header = level.name;
         v.title = level.subtitle;
@@ -306,6 +309,7 @@ function createGame(data, options) {
 
       case "feedback":
         level = currentLevel();
+        v.levelId = level.id;
         v.header = level.name;
         v.title = state.last.good ? "好選擇！" : "這個選擇有風險";
         v.body = "你選了：" + state.last.chosenText;
@@ -316,6 +320,7 @@ function createGame(data, options) {
 
       case "gameOver":
         level = currentLevel();
+        v.levelId = level.id;
         v.header = level.name;
         v.title = "能量耗盡了";
         v.body = "你飛不動了。回到本關開頭，再試一次吧。\n想想看：哪些選擇消耗了最多能量？";
@@ -324,6 +329,7 @@ function createGame(data, options) {
 
       case "levelEnd":
         level = currentLevel();
+        v.levelId = level.id;
         v.header = level.name;
         v.title = "過關！";
         v.body = level.summary + "\n" + level.bringBack;
