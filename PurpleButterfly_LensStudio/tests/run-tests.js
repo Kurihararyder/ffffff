@@ -197,6 +197,7 @@ function makeLensEnv(opts) {
     VerticalAlignment: { Center: "C" }, HorizontalAlignment: { Left: "L", Right: "R", Center: "C" },
     requireAsset: (p) => {
       if (opts.failAssets) throw new Error("requireAsset 不可用");
+      if (!p.startsWith("..")) throw new Error("not found " + p);
       const full = path.join(ASSET_ROOT, "Scripts", p);
       if (!fs.existsSync(full)) throw new Error("not found " + p);
       return { asset: p };
@@ -336,13 +337,13 @@ test("圖片：requireAsset 不可用時，改用 Textures 欄位（依檔名比
   assert.strictEqual(mat("Banner1"), given.find((g) => g.name === "q1_banner"));
   assert.strictEqual(mat("AnswerX"), given.find((g) => g.name === "ans_x"));
   assert.strictEqual(byName(env, "Status").enabled, true); // 字型也失敗 → 有字型提示
-  assert(!T(env, "Status").includes("張圖片"), T(env, "Status"));
+  assert(!T(env, "Status").includes("圖片未載入"), T(env, "Status"));
 });
 
 test("圖片：兩種方式都失敗時，畫面最下方顯示明確的處理方法", () => {
   const env = makeLensEnv({ failAssets: true });
   assert.strictEqual(byName(env, "Status").enabled, true);
-  assert(/找不到 \d+ 張圖片/.test(T(env, "Status")), T(env, "Status"));
+  assert(/圖片未載入 \d+ 張/.test(T(env, "Status")), T(env, "Status"));
   assert(T(env, "Status").includes("Textures"));
 });
 

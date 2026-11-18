@@ -14,8 +14,7 @@
 var DATA = require("./QuizData.js");
 var Logic = require("./GameLogic.js");
 
-var ART_DIR = "../Art/";
-var FONT_PATH = "../Fonts/NotoSansTC-Medium-subset.ttf";
+var FONT_FILE = "NotoSansTC-Medium-subset.ttf";
 var LOG = "[紫蝶奇遇記] ";
 
 if (!script.templateImage) {
@@ -26,13 +25,27 @@ if (!script.templateImage) {
 var game = Logic.createGame(DATA);
 
 // ───────────── 工具 ─────────────
-function loadAsset(path) {
+var lastLoadError = "";
+function tryRequire(path) {
   try {
-    return requireAsset(path);
+    var a = requireAsset(path);
+    if (a) return a;
+    lastLoadError = "回傳空值：" + path;
   } catch (e) {
-    print(LOG + "找不到資源：" + path + "（" + e + "）");
-    return null;
+    lastLoadError = String(e);
   }
+  return null;
+}
+
+// 依序嘗試幾種路徑寫法（相對於腳本、或從專案根目錄算起），第一個成功的就用
+function loadAsset(folder, file) {
+  var tries = ["../" + folder + "/" + file, "Assets/PurpleButterfly/" + folder + "/" + file, "/Assets/PurpleButterfly/" + folder + "/" + file];
+  for (var i = 0; i < tries.length; i++) {
+    var a = tryRequire(tries[i]);
+    if (a) return a;
+  }
+  print(LOG + "找不到資源：" + folder + "/" + file + "（" + lastLoadError + "）");
+  return null;
 }
 
 // 以「螢幕比例（左上為 0,0）」描述位置 → ScreenTransform 的 anchors（-1..1，y 向上）
@@ -49,7 +62,7 @@ var tplImage = script.templateImage;
 var tplObject = tplImage.getSceneObject();
 var baseMaterial = tplImage.mainMaterial;
 var renderLayer = tplObject.layer;
-var font = script.fontOverride || loadAsset(FONT_PATH);
+var font = script.fontOverride || loadAsset("Fonts", FONT_FILE);
 
 // UI 要掛在「相機」底下才會是全螢幕；如果直接掛在範本圖片的父物件，父物件的大小會讓整個介面縮小
 function findCameraAncestor(obj) {
@@ -84,7 +97,7 @@ var textures = {};
 var missingTextures = [];
 function getTexture(name) {
   if (textures[name] === undefined) {
-    var tex = givenTextures[name.replace(/\.(png|jpe?g)$/i, "")] || loadAsset(ART_DIR + name);
+    var tex = givenTextures[name.replace(/\.(png|jpe?g)$/i, "")] || loadAsset("Art", name);
     textures[name] = tex || null;
     if (!tex) missingTextures.push(name);
   }
@@ -218,13 +231,14 @@ var badges = {
 var nextButton = makeImage("NextButton", R.next, "ui_btn_next.png", false);
 var nextLabel = makeText("NextLabel", inset(R.next, 0.06, 0.1), 52, "center", WHITE);
 
-var statusText = makeText("Status", [0.03, 0.952, 0.97, 0.997], 30, "left", new vec4(1, 0.95, 0.4, 1), true);
+var statusText = makeText("Status", [0.03, 0.935, 0.97, 0.998], 34, "left", new vec4(1, 0.95, 0.4, 1), true);
 var lastTouchInfo = "";
 
 function updateStatus() {
   var lines = [];
   if (missingTextures.length > 0) {
-    lines.push("找不到 " + missingTextures.length + " 張圖片：請選取 Art 資料夾內全部圖片，拖到 GameController 的 Textures 欄位");
+    lines.push("圖片未載入 " + missingTextures.length + " 張（" + lastLoadError.slice(0, 60) + "）");
+    lines.push("→ 把 Art 裡全部圖片拖到 Textures 欄位");
   }
   if (!font) lines.push("字型未載入");
   if (script.showDebug && lastTouchInfo) lines.push(lastTouchInfo);
