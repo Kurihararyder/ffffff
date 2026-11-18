@@ -1,6 +1,6 @@
 # ffffff
 
-## 紫蝶奇遇記 — Lens Studio 套件
+## 紫蝶奇遇記 — Lens Studio 三題視訊遊戲
 
-- 下載整包：[PurpleButterfly_LensStudio.zip](PurpleButterfly_LensStudio.zip)（點進去後按右上角的下載圖示）
+- 下載整包：[PurpleButterfly_LensStudio.zip](PurpleButterfly_LensStudio.zip)（直接下載：https://github.com/Kurihararyder/ffffff/raw/main/PurpleButterfly_LensStudio.zip ）
 - 使用說明與預覽：[PurpleButterfly_LensStudio/README.md](PurpleButterfly_LensStudio/README.md)

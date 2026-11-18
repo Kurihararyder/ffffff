@@ -1,13 +1,12 @@
-// 紫蝶奇遇記 — Lens Studio 5.x 控制腳本
-// 這個腳本會在執行時自動建立整個介面（背景、圖示、按鈕、文字、能量條），
-// 圖片與字型用 requireAsset 從 ../Art 與 ../Fonts 載入。
+// 紫蝶奇遇記 — Lens Studio 5.x 控制腳本（三題是非題 + 視訊變身）
+// 腳本會在執行時自動建立整個介面：題目圖、O / X 按鈕、回饋、變身圖片。
+// 相機畫面（視訊）保持顯示在最底下，答完三題後，臉上會出現「紫斑蝶」或「牛糞」。
 //
-// 你只需要做一件事：把場景裡任一個 Screen Image 拖到下面的 Template Image 欄位。
+// 你只需要把場景裡任一個 Screen Image 拖到下面的 Template Image 欄位。
 // 腳本會複製它的材質來顯示所有圖片，然後把它隱藏起來。
 
 //@input Component.Image templateImage {"label":"Template Image (任一個 Screen Image)"}
-//@input bool includeBonusLevel = true {"label":"包含第 4 關（遷徙）"}
-//@input bool shuffleChoices = true {"label":"隨機排列選項"}
+//@input bool followFace = true {"label":"變身圖片跟著臉移動（找不到臉就放畫面中間）"}
 //@input Asset.Font fontOverride {"label":"字型（選填，不填就用內建的 Noto Sans TC）"}
 
 var DATA = require("./QuizData.js");
@@ -15,7 +14,6 @@ var Logic = require("./GameLogic.js");
 
 var ART_DIR = "../Art/";
 var FONT_PATH = "../Fonts/NotoSansTC-Medium-subset.ttf";
-
 var LOG = "[紫蝶奇遇記] ";
 
 if (!script.templateImage) {
@@ -23,10 +21,7 @@ if (!script.templateImage) {
   return;
 }
 
-var game = Logic.createGame(DATA, {
-  includeBonusLevel: script.includeBonusLevel,
-  shuffleChoices: script.shuffleChoices
-});
+var game = Logic.createGame(DATA);
 
 // ───────────── 工具 ─────────────
 function loadAsset(path) {
@@ -40,35 +35,31 @@ function loadAsset(path) {
 
 // 以「螢幕比例（左上為 0,0）」描述位置 → ScreenTransform 的 anchors（-1..1，y 向上）
 function rectToAnchors(r) {
-  var left = r[0] * 2 - 1;
-  var right = r[2] * 2 - 1;
-  var top = 1 - r[1] * 2;
-  var bottom = 1 - r[3] * 2;
-  return Rect.create(left, right, bottom, top);
+  return Rect.create(r[0] * 2 - 1, r[2] * 2 - 1, 1 - r[3] * 2, 1 - r[1] * 2);
+}
+
+function inset(r, fx, fy) {
+  var w = r[2] - r[0], h = r[3] - r[1];
+  return [r[0] + w * fx, r[1] + h * fy, r[2] - w * fx, r[3] - h * fy];
 }
 
 var tplImage = script.templateImage;
 var tplObject = tplImage.getSceneObject();
 var baseMaterial = tplImage.mainMaterial;
 var renderLayer = tplObject.layer;
-
 var font = script.fontOverride || loadAsset(FONT_PATH);
 
 var root = global.scene.createSceneObject("PurpleButterfly UI");
 if (tplObject.getParent()) root.setParent(tplObject.getParent());
 root.layer = renderLayer;
-var rootTransform = root.createComponent("Component.ScreenTransform");
-rootTransform.anchors = Rect.create(-1, 1, -1, 1);
+root.createComponent("Component.ScreenTransform").anchors = Rect.create(-1, 1, -1, 1);
 
 var textures = {};
 function getTexture(name) {
-  if (textures[name] === undefined) {
-    textures[name] = loadAsset(ART_DIR + name);
-  }
+  if (textures[name] === undefined) textures[name] = loadAsset(ART_DIR + name);
   return textures[name];
 }
 
-// 元素：{ obj, transform, rect, image?, text? }
 function makeObject(name, rect) {
   var obj = global.scene.createSceneObject(name);
   obj.setParent(root);
@@ -90,9 +81,10 @@ function makeImage(name, rect, file, fit) {
 }
 
 var WHITE = new vec4(1, 1, 1, 1);
-var LAVENDER = new vec4(0.82, 0.76, 1, 1);
+var LAVENDER = new vec4(0.86, 0.8, 1, 1);
 var GOOD = new vec4(0.6, 0.96, 0.74, 1);
 var BAD = new vec4(1, 0.72, 0.52, 1);
+var GOLD = new vec4(1, 0.9, 0.5, 1);
 
 function makeText(name, rect, size, hAlign, color, outline) {
   var el = makeObject(name, rect);
@@ -134,158 +126,192 @@ function show(el, on) {
 
 // ───────────── 版面（螢幕比例）─────────────
 var R = {
-  icon: [0.05, 0.035, 0.155, 0.092],
-  header: [0.17, 0.042, 0.64, 0.086],
-  progress: [0.62, 0.042, 0.94, 0.086],
-  mascot: [0.05, 0.098, 0.155, 0.152],
-  barTrack: [0.17, 0.112, 0.64, 0.138],
-  energyText: [0.65, 0.098, 0.95, 0.152],
-  badge: [0.36, 0.145, 0.64, 0.275],
-  title: [0.07, 0.305, 0.93, 0.372],
-  cardShort: [0.06, 0.385, 0.94, 0.60],
-  cardTall: [0.06, 0.385, 0.94, 0.835],
-  bodyShort: [0.11, 0.395, 0.89, 0.59],
-  bodyTall: [0.11, 0.397, 0.89, 0.825],
-  bodySplitTop: [0.11, 0.393, 0.89, 0.47],
-  feedbackSplit: [0.11, 0.475, 0.89, 0.826],
-  choices: [
-    [0.06, 0.625, 0.94, 0.725],
-    [0.06, 0.74, 0.94, 0.84],
-    [0.06, 0.855, 0.94, 0.955]
-  ],
-  next: [0.20, 0.865, 0.80, 0.945]
+  topbar: [0, 0, 1, 0.14],
+  title: [0.06, 0.03, 0.58, 0.075],
+  progress: [0.58, 0.03, 0.94, 0.075],
+  banner: [0.03, 0.085, 0.97, 0.25],
+  plateO: [0.08, 0.70, 0.48, 0.885],
+  plateX: [0.52, 0.70, 0.92, 0.885],
+  labelO: [0.08, 0.89, 0.48, 0.935],
+  labelX: [0.52, 0.89, 0.92, 0.935],
+  badge: [0.38, 0.495, 0.62, 0.60],
+  next: [0.20, 0.87, 0.80, 0.95],
+  // 說明卡片（三種高度）
+  cardIntro: [0.06, 0.47, 0.94, 0.83],
+  introTitle: [0.10, 0.48, 0.90, 0.55],
+  introBody: [0.10, 0.56, 0.90, 0.82],
+  cardFeedback: [0.06, 0.60, 0.94, 0.84],
+  fbTitle: [0.10, 0.608, 0.90, 0.67],
+  fbBody: [0.10, 0.675, 0.90, 0.832],
+  cardResult: [0.06, 0.64, 0.94, 0.85],
+  resTitle: [0.10, 0.648, 0.90, 0.72],
+  resBody: [0.10, 0.725, 0.90, 0.842],
+  // 變身圖片在找不到臉時的位置
+  overlayFallback: [0.05, 0.22, 0.95, 0.62]
 };
 
 // ───────────── 建立介面（越後面建立的越在上層）─────────────
-var BG_FILES = {
-  title: "bg_title.jpg", test: "bg_test.jpg", result: "bg_result.jpg",
-  l1: "bg_l1.jpg", l2: "bg_l2.jpg", l3: "bg_l3.jpg", l4: "bg_l4.jpg"
-};
-var ICON_FILES = {
-  hero: "icon_hero.png", test: "icon_test.png",
-  l1: "icon_l1.png", l2: "icon_l2.png", l3: "icon_l3.png", l4: "icon_l4.png"
-};
-
-var bgs = {};
-var icons = {};
-var key;
-for (key in BG_FILES) bgs[key] = makeImage("bg_" + key, [0, 0, 1, 1], BG_FILES[key], false);
-
-var headerText = makeText("Header", R.header, 40, "left", LAVENDER, true);
+var topbar = makeImage("TopBar", R.topbar, "ui_topbar.png", false);
+var titleText = makeText("GameTitle", R.title, 44, "left", WHITE, true);
 var progressText = makeText("Progress", R.progress, 40, "right", LAVENDER, true);
 
-var mascot = makeImage("Mascot", R.mascot, "mascot.png", true);
-var barTrack = makeImage("EnergyTrack", R.barTrack, "ui_bar_track.png", false);
-var barFill = makeImage("EnergyFill", R.barTrack, "ui_bar_fill.png", false);
-var energyText = makeText("EnergyText", R.energyText, 44, "right", WHITE, true);
+var banners = [];
+for (var qi = 0; qi < DATA.questions.length; qi++) {
+  banners.push(makeImage("Banner" + (qi + 1), R.banner, DATA.questions[qi].banner, true));
+}
 
-for (key in ICON_FILES) icons[key] = makeImage("icon_" + key, R.icon, ICON_FILES[key], true);
-var badges = {
-  good: makeImage("badge_good", R.badge, "icon_good.png", true),
-  bad: makeImage("badge_bad", R.badge, "icon_bad.png", true)
+// 變身圖片（紫斑蝶 / 牛糞）
+var overlays = {
+  "img_butterfly.png": makeImage("Overlay_Butterfly", R.overlayFallback, "img_butterfly.png", true),
+  "img_dung.png": makeImage("Overlay_Dung", R.overlayFallback, "img_dung.png", true)
 };
 
-var titleText = makeText("Title", R.title, 72, "center", WHITE, true);
-var card = makeImage("Card", R.cardShort, "ui_card.png", false);
-var bodyText = makeText("Body", R.bodyShort, 52, "left", WHITE);
-var feedbackText = makeText("Feedback", R.feedbackSplit, 52, "left", WHITE);
+var card = makeImage("Card", R.cardIntro, "ui_card.png", false);
+var cardTitle = makeText("CardTitle", R.introTitle, 60, "center", WHITE);
+var cardBody = makeText("CardBody", R.introBody, 48, "left", WHITE);
 
-var choiceButtons = [];
-var choiceLabels = [];
-for (var i = 0; i < 3; i++) {
-  choiceButtons.push(makeImage("ChoiceButton" + i, R.choices[i], "ui_btn.png", false));
-  var inner = [R.choices[i][0] + 0.05, R.choices[i][1] + 0.008, R.choices[i][2] - 0.05, R.choices[i][3] - 0.008];
-  choiceLabels.push(makeText("ChoiceLabel" + i, inner, 48, "left", WHITE));
-}
+var plateO = makeImage("PlateO", R.plateO, "ui_plate.png", true);
+var plateX = makeImage("PlateX", R.plateX, "ui_plate.png", true);
+var ansO = makeImage("AnswerO", inset(R.plateO, 0.12, 0.12), "ans_o.png", true);
+var ansX = makeImage("AnswerX", inset(R.plateX, 0.12, 0.12), "ans_x.png", true);
+var labelO = makeText("LabelO", R.labelO, 44, "center", WHITE, true);
+var labelX = makeText("LabelX", R.labelX, 44, "center", WHITE, true);
+labelO.text.text = "正確";
+labelX.text.text = "錯誤";
+
+var badges = {
+  good: makeImage("Badge_Good", R.badge, "icon_good.png", true),
+  bad: makeImage("Badge_Bad", R.badge, "icon_bad.png", true)
+};
+
 var nextButton = makeImage("NextButton", R.next, "ui_btn_next.png", false);
-var nextLabel = makeText("NextLabel", [R.next[0] + 0.04, R.next[1] + 0.006, R.next[2] - 0.04, R.next[3] - 0.006], 52, "center", WHITE);
+var nextLabel = makeText("NextLabel", inset(R.next, 0.06, 0.1), 52, "center", WHITE);
 
-// 能量條填滿比例
-function setEnergyBar(pct) {
-  var r = R.barTrack;
-  var right = r[0] + (r[2] - r[0]) * Math.max(0, Math.min(1, pct));
-  setRect(barFill, [r[0], r[1], Math.max(right, r[0] + 0.001), r[3]]);
-  show(barFill, pct > 0.015);
-}
+// ───────────── 臉部追蹤（找不到就用固定位置）─────────────
+var perspCam = null;
+var headObj = null;
+var faceFound = false;
+var faceBroken = false;
+var overlayActive = null; // 目前顯示中的變身圖片
 
-// ───────────── 畫面更新 ─────────────
-function chooseBackground(v) {
-  if (v.phase === "intro") return "title";
-  if (v.phase === "test" || v.phase === "testFeedback") return "test";
-  if (v.phase === "result") return "result";
-  return "l" + v.levelId;
-}
-
-function chooseIcon(v) {
-  if (v.phase === "intro" || v.phase === "result") return "hero";
-  if (v.phase === "test" || v.phase === "testFeedback") return "test";
-  return "l" + v.levelId;
-}
-
-// 答對 / 答錯的大徽章（只在回饋畫面顯示）
-function chooseBadge(v) {
-  if (v.phase === "feedback" || v.phase === "testFeedback") return v.feedbackGood ? "good" : "bad";
+function findPerspectiveCamera() {
+  try {
+    var stack = [];
+    var n = global.scene.getRootObjectsCount();
+    for (var i = 0; i < n; i++) stack.push(global.scene.getRootObject(i));
+    while (stack.length) {
+      var o = stack.pop();
+      var cam = o.getComponent("Component.Camera");
+      if (cam && cam.type === Camera.Type.Perspective) return cam;
+      for (var c = 0; c < o.getChildrenCount(); c++) stack.push(o.getChild(c));
+    }
+  } catch (e) {}
   return null;
 }
 
+if (script.followFace) {
+  perspCam = findPerspectiveCamera();
+  if (perspCam) {
+    try {
+      headObj = global.scene.createSceneObject("PurpleButterfly Head");
+      var head = headObj.createComponent("Component.Head");
+      head.faceIndex = 0;
+    } catch (e) {
+      headObj = null;
+    }
+  }
+  if (!perspCam || !headObj) print(LOG + "找不到透視相機或無法建立臉部追蹤，變身圖片會放在畫面中間。");
+}
+
+script.createEvent("FaceFoundEvent").bind(function () { faceFound = true; });
+script.createEvent("FaceLostEvent").bind(function () { faceFound = false; });
+
+// 以臉的位置與大小算出變身圖片的螢幕位置（比例）
+function faceRect() {
+  var pos = headObj.getTransform().getWorldPosition();
+  var camT = perspCam.getTransform();
+  var p0 = perspCam.worldSpaceToScreenSpace(pos);
+  var p1 = perspCam.worldSpaceToScreenSpace(pos.add(camT.right.uniformScale(15)));
+  var w = Math.abs(p1.x - p0.x) * 2.6; // 臉寬約 15 公分，圖片約為臉的 2.6 倍
+  var aspect = perspCam.aspect > 0 ? perspCam.aspect : 0.5;
+  w = Math.max(0.25, Math.min(1.1, w));
+  var h = w / aspect;
+  if (!isFinite(p0.x) || !isFinite(p0.y) || !isFinite(w)) return null;
+  return [p0.x - w / 2, p0.y - h / 2, p0.x + w / 2, p0.y + h / 2];
+}
+
+script.createEvent("UpdateEvent").bind(function () {
+  if (!overlayActive || !headObj || !faceFound || faceBroken) return;
+  try {
+    var r = faceRect();
+    if (r) setRect(overlayActive, r);
+  } catch (e) {
+    faceBroken = true;
+    setRect(overlayActive, R.overlayFallback);
+  }
+});
+
+// ───────────── 畫面更新 ─────────────
 var currentView = null;
 
 function render() {
   var v = game.getView();
   currentView = v;
+  var phase = v.phase;
 
-  var bgKey = chooseBackground(v);
-  var iconKey = chooseIcon(v);
-  for (var k in bgs) show(bgs[k], k === bgKey);
-  for (var k2 in icons) show(icons[k2], k2 === iconKey);
-  var badgeKey = chooseBadge(v);
-  show(badges.good, badgeKey === "good");
-  show(badges.bad, badgeKey === "bad");
-
-  headerText.text.text = v.header;
+  titleText.text.text = DATA.title;
   progressText.text.text = v.progress;
-  titleText.text.text = v.title;
 
-  // 能量
-  show(mascot, v.showEnergy);
-  show(barTrack, v.showEnergy);
-  show(energyText, v.showEnergy);
-  if (v.showEnergy) {
-    var d = v.energyDelta;
-    energyText.text.text = "能量 " + v.energy + (d > 0 ? " (+" + d + ")" : d < 0 ? " (" + d + ")" : "");
-    setEnergyBar(v.energyPct);
-  } else {
-    show(barFill, false);
+  // 題目圖
+  for (var i = 0; i < banners.length; i++) show(banners[i], i === v.questionIndex);
+
+  // O / X
+  show(plateO, v.showAnswers); show(plateX, v.showAnswers);
+  show(ansO, v.showAnswers); show(ansX, v.showAnswers);
+  show(labelO, v.showAnswers); show(labelX, v.showAnswers);
+
+  // 答對 / 答錯徽章
+  show(badges.good, phase === "feedback" && v.feedbackGood === true);
+  show(badges.bad, phase === "feedback" && v.feedbackGood === false);
+
+  // 變身圖片
+  overlayActive = null;
+  for (var key in overlays) {
+    var on = phase === "result" && v.resultImage === key;
+    show(overlays[key], on);
+    if (on) {
+      overlayActive = overlays[key];
+      setRect(overlayActive, R.overlayFallback);
+    }
   }
 
-  // 版面：有選項 → 短卡片；沒有選項 → 高卡片
-  var hasChoices = v.choices.length > 0;
-  var hasFeedback = v.feedback && v.feedback.length > 0;
-  setRect(card, hasChoices ? R.cardShort : R.cardTall);
-
-  if (hasChoices) {
-    setRect(bodyText, R.bodyShort);
-    bodyText.text.text = v.body;
-    show(feedbackText, false);
-  } else if (hasFeedback) {
-    setRect(bodyText, R.bodySplitTop);
-    bodyText.text.text = v.body;
-    feedbackText.text.text = v.feedback;
-    setColor(feedbackText, v.feedbackGood ? GOOD : BAD);
-    show(feedbackText, true);
-  } else {
-    setRect(bodyText, R.bodyTall);
-    bodyText.text.text = v.body;
-    show(feedbackText, false);
+  // 說明卡片
+  var hasCard = phase === "intro" || phase === "feedback" || phase === "result";
+  show(card, hasCard);
+  show(cardTitle, hasCard);
+  show(cardBody, hasCard);
+  if (phase === "intro") {
+    setRect(card, R.cardIntro);
+    setRect(cardTitle, R.introTitle);
+    setRect(cardBody, R.introBody);
+    setColor(cardTitle, GOLD);
+  } else if (phase === "feedback") {
+    setRect(card, R.cardFeedback);
+    setRect(cardTitle, R.fbTitle);
+    setRect(cardBody, R.fbBody);
+    setColor(cardTitle, v.feedbackGood ? GOOD : BAD);
+  } else if (phase === "result") {
+    setRect(card, R.cardResult);
+    setRect(cardTitle, R.resTitle);
+    setRect(cardBody, R.resBody);
+    setColor(cardTitle, v.win ? GOLD : BAD);
+  }
+  if (hasCard) {
+    cardTitle.text.text = v.title;
+    cardBody.text.text = v.body;
   }
 
-  for (var i = 0; i < 3; i++) {
-    var on = i < v.choices.length;
-    show(choiceButtons[i], on);
-    show(choiceLabels[i], on);
-    if (on) choiceLabels[i].text.text = String.fromCharCode(65 + i) + ".  " + v.choices[i];
-  }
-
+  // 下一步按鈕
   var hasNext = v.nextLabel !== null && v.nextLabel !== undefined;
   show(nextButton, hasNext);
   show(nextLabel, hasNext);
@@ -304,28 +330,23 @@ function hit(el, p) {
   return p.x >= r[0] && p.x <= r[2] && p.y >= r[1] && p.y <= r[3];
 }
 
-function onTouch(eventData) {
+script.createEvent("TouchStartEvent").bind(function (eventData) {
   if (!currentView) return;
   var p = eventData.getTouchPosition();
-  var n = currentView.choices.length;
-  for (var i = 0; i < n; i++) {
-    if (hit(choiceButtons[i], p)) {
-      if (game.choose(i)) render();
-      return;
-    }
+  if (currentView.showAnswers) {
+    if (hit(plateO, p)) { if (game.choose(0)) render(); return; }
+    if (hit(plateX, p)) { if (game.choose(1)) render(); return; }
   }
   if (currentView.nextLabel !== null && hit(nextButton, p)) {
     if (game.next()) render();
   }
-}
-
-script.createEvent("TouchStartEvent").bind(onTouch);
+});
 
 // 範本圖片只是用來借材質，隱藏起來
 tplObject.enabled = false;
 render();
 
-// 其他腳本可讀取成績（完成率、前後測等）
+// 其他腳本可讀取成績
 script.api.getStats = function () {
   return game.getStats();
 };
