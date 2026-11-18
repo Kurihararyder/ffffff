@@ -21,13 +21,14 @@
 3. Objects 面板按 `+` → **Screen Image**（會自動建立 Orthographic Camera 和一張圖片）。
 4. 再按 `+` → **Scene Object**，改名 `Game`；在 Inspector 按 **Add Component → Script**，選 `GameController.js`；
    把第 3 步的 Screen Image 從 Objects 面板**拖到 Template Image 欄位**。
-5. 在 Preview 切到手機直式測試（用前鏡頭自拍最合適）。
+5. **把圖片拖進去（必要）**：在 Asset Browser 展開 `PurpleButterfly` → `Art`，`Ctrl+A` 全選裡面所有圖片，
+   一次拖到 GameController 的 **Textures** 欄位上（腳本會依檔名自動對應）。一次拖不進去就按 **Add Value** 一張一張加。
+6. 在 Preview 切到手機直式測試（用前鏡頭自拍最合適）。
 
 Template Image 只是用來借它的材質，腳本會把它隱藏。
 
-**圖片如果變成粉紅色格子**（Lens Studio 的「找不到貼圖」），而且畫面最下方出現黃色的「圖片未載入 N 張」：
-在 Asset Browser 打開 `Art` 資料夾，全選裡面所有圖片，一次拖到 GameController 的 **Textures** 欄位上即可（腳本會依檔名自動對應）。
-畫面最下方的黃字是除錯資訊（會顯示字型、圖片是否載入，以及每次點擊的位置與結果），弄好後可在 Inspector 取消勾選「顯示除錯資訊」。
+**沒做第 5 步的話**，圖片會變成粉紅色格子（Lens Studio 的「找不到貼圖」），畫面最下方會出現黃字「圖片未載入 N 張」。
+黃字是除錯資訊（也會顯示字型是否載入，以及每次點擊的位置與結果），都正常後可在 Inspector 取消勾選「顯示除錯資訊」。
 
 ## 變身圖片會跟著臉
 腳本會嘗試用臉部追蹤把「紫斑蝶 / 牛糞」放在臉的位置並依臉的大小縮放。
