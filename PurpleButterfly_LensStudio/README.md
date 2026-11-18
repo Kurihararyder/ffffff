@@ -23,7 +23,9 @@
    把第 3 步的 Screen Image 從 Objects 面板**拖到 Template Image 欄位**。
 5. **把圖片拖進去（必要）**：在 Asset Browser 展開 `PurpleButterfly` → `Art`，`Ctrl+A` 全選裡面所有圖片，
    一次拖到 GameController 的 **Textures** 欄位上（腳本會依檔名自動對應）。一次拖不進去就按 **Add Value** 一張一張加。
-6. 在 Preview 切到手機直式測試（用前鏡頭自拍最合適）。
+6. **把字型拖進去**：把 `Fonts/NotoSansTC-Medium-subset.ttf` 拖到 GameController 的「字型」欄位。
+   （沒拖的話會改用 Lens Studio 預設字型，畫面最下方會有黃字「字型未載入」；中文不一定顯示得完整。）
+7. 在 Preview 切到手機直式測試（用前鏡頭自拍最合適）。
 
 Template Image 只是用來借它的材質，腳本會把它隱藏。
 

@@ -240,7 +240,7 @@ function updateStatus() {
     lines.push("圖片未載入 " + missingTextures.length + " 張（" + lastLoadError.slice(0, 60) + "）");
     lines.push("→ 把 Art 裡全部圖片拖到 Textures 欄位");
   }
-  if (!font) lines.push("字型未載入");
+  if (!font) lines.push("字型未載入 → 把 Fonts 裡的 .ttf 拖到「字型」欄位");
   if (script.showDebug && lastTouchInfo) lines.push(lastTouchInfo);
   statusText.text.text = lines.join("\n");
   show(statusText, lines.length > 0);
